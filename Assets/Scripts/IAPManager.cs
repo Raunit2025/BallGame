@@ -1,16 +1,22 @@
 using UnityEngine;
 using UnityEngine.Purchasing;
+using UnityEngine.Purchasing.Security; // Required for CrossPlatformValidator
 using System;
 using System.Collections.Generic;
-using System.Linq; // Needed for .First()
+using System.Linq;
+using Unity.Services.Core;
+using System.Threading.Tasks;
+using Newtonsoft.Json; // Make sure you have JSON.NET or use JsonUtility
 
-// Note: We no longer use IAPCore or IStoreListener
 public class IAPManager : MonoBehaviour
 {
     public static IAPManager Instance { get; private set; }
-    public static event Action OnPurchaseSuccessful;
+    
+    // Event sends the purchased quantity
+    public static event Action<int> OnPurchaseSuccessful;
 
     private StoreController m_StoreController;
+    private bool m_IsStoreInitialized = false;
 
     public const string PRODUCT_BUY_100_BALLS = "buy_100_balls";
 
@@ -29,37 +35,49 @@ public class IAPManager : MonoBehaviour
 
     private void Start()
     {
-        // Start the async initialization
         InitializeIAP();
     }
 
     async void InitializeIAP()
     {
-        // Get the controller instance
-        m_StoreController = UnityIAPServices.StoreController();
-
-        // Subscribe to all the new events
-        m_StoreController.OnPurchasePending += OnPurchasePending;
-        m_StoreController.OnPurchaseConfirmed += OnPurchaseConfirmed;
-        m_StoreController.OnPurchaseFailed += OnPurchaseFailed;
-        m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
-        m_StoreController.OnProductsFetchFailed += OnProductsFetchedFailed;
-        m_StoreController.OnProductsFetched += OnProductsFetched;
-
-        Debug.Log("IAPManager: Connecting to store...");
+        Debug.Log("IAPManager: Starting initialization...");
         try
         {
-            // Asynchronously connect to the store
-            await m_StoreController.Connect();
+            await UnityServices.InitializeAsync();
+            Debug.Log("IAPManager: UGS Handshake SUCCESS.");
         }
         catch (Exception e)
         {
-            Debug.LogError($"IAPManager: Failed to connect to store: {e.Message}");
+            Debug.LogError($"IAPManager: UGS Initialization failed: {e.Message}");
             return;
         }
 
-        // After connecting, fetch our products
-        FetchProducts();
+        m_StoreController = UnityIAPServices.StoreController();
+        m_StoreController.OnPurchasePending += OnPurchasePending;
+        m_StoreController.OnProductsFetched += OnProductsFetched;
+        m_StoreController.OnProductsFetchFailed += OnProductsFetchedFailed;
+        m_StoreController.OnPurchaseDeferred += OnPurchaseDeferred;
+
+        Debug.Log("IAPManager: Connecting to Google Play...");
+        try
+        {
+            var connectTask = m_StoreController.Connect();
+            if (await Task.WhenAny(connectTask, Task.Delay(10000)) == connectTask)
+            {
+                await connectTask;
+                m_IsStoreInitialized = true;
+                Debug.Log("IAPManager: SUCCESSFULLY CONNECTED TO STORE.");
+                FetchProducts();
+            }
+            else
+            {
+                Debug.LogError("IAPManager: Connection TIMED OUT. Check License Key.");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"IAPManager: CONNECTION FAILED: {e.Message}");
+        }
     }
 
     void FetchProducts()
@@ -68,88 +86,71 @@ public class IAPManager : MonoBehaviour
         {
             new(PRODUCT_BUY_100_BALLS, ProductType.Consumable)
         };
-        
         Debug.Log("IAPManager: Fetching products...");
         m_StoreController.FetchProducts(productsToFetch);
     }
 
-    // --- Public Purchase Method ---
-
     public void Buy100Balls()
     {
-        if (m_StoreController == null)
+        if (!m_IsStoreInitialized || m_StoreController == null)
         {
-            Debug.LogWarning("IAPManager: Cannot buy, Store Controller is not initialized.");
+            Debug.LogError("IAPManager: Cannot buy. Store is NOT initialized.");
             return;
         }
-        m_StoreController.PurchaseProduct(PRODUCT_BUY_100_BALLS);
+
+        var product = m_StoreController.GetProductById(PRODUCT_BUY_100_BALLS);
+        if (product != null && product.availableToPurchase)
+        {
+            Debug.Log($"IAPManager: Initiating purchase for {PRODUCT_BUY_100_BALLS}");
+            // Note: Unity IAP's InitiatePurchase typically buys 1 unit. 
+            // Multi-quantity selection usually happens in the Store UI or requires a custom payload if supported.
+            m_StoreController.PurchaseProduct(PRODUCT_BUY_100_BALLS);
+        }
+        else
+        {
+            Debug.LogError($"IAPManager: Product {PRODUCT_BUY_100_BALLS} not found.");
+        }
     }
 
     // --- Event Callbacks ---
 
+    void OnPurchaseDeferred(DeferredOrder deferredOrder)
+    {
+        Debug.Log("IAPManager: Purchase deferred.");
+    }
+
     void OnProductsFetched(List<Product> products)
     {
-        Debug.Log($"IAPManager: Products fetched successfully ({products.Count} products).");
-        foreach (var product in products)
-        {
-            Debug.Log($"Product: {product.definition.id}, Available: {product.availableToPurchase}");
-        }
+        Debug.Log($"IAPManager: {products.Count} products found in Google Play.");
     }
 
     void OnPurchasePending(PendingOrder order)
     {
-        var product = GetFirstProductInOrder(order);
-        if (product is null)
+        foreach (var item in order.CartOrdered.Items()) 
         {
-            Debug.LogWarning("IAPManager: Could not find product in pending order.");
-            return;
+            var product = item.Product;
+            Debug.Log($"IAPManager: Purchase pending for: {product?.definition.id}");
+
+            if (product?.definition.id == PRODUCT_BUY_100_BALLS)
+            {
+                // 1. Try standard quantity
+                int quantity = item.Quantity;
+
+                // 2. If standard is 1, try to parse receipt for deeper data (Android specific)
+                if (quantity <= 1)
+                {
+                    // This is a simplified check. Real parsing requires the UnifiedReceipt class
+                    // For now, we will trust the item.Quantity BUT log it clearly.
+                    // If you are buying "2x" in the Google Sandbox, it might send 2 separate orders of 1.
+                }
+
+                Debug.Log($"IAPManager: PROCESSING PURCHASE. Quantity: {quantity}");
+                
+                // IMPORTANT: If you receive multiple separate events for 1 item each, this will trigger twice.
+                OnPurchaseSuccessful?.Invoke(quantity);
+            }
         }
-
-        Debug.Log($"IAPManager: Purchase pending for Product: {product.definition.id}");
-
-        // Grant the item
-        if (product.definition.id == PRODUCT_BUY_100_BALLS)
-        {
-            OnPurchaseSuccessful?.Invoke();
-        }
-
-        // CRITICAL: Confirm the purchase
         m_StoreController.ConfirmPurchase(order);
-    }
-
-    void OnPurchaseConfirmed(Order order)
-    {
-        // This callback confirms that the store (e.g., Google Play)
-        // has successfully registered the confirmation.
-        
-        var product = GetFirstProductInOrder(order);
-
-        // Check if the confirmation itself failed
-        if (order is FailedOrder failedOrder)
-        {
-            Debug.LogError($"IAPManager: Confirmation FAILED for {product?.definition.id}. Reason: {failedOrder.FailureReason}, Details: {failedOrder.Details}");
-            return;
-        }
-        
-        Debug.Log($"IAPManager: Purchase confirmed successfully for Product: {product?.definition.id}");
-    }
-
-    void OnPurchaseFailed(FailedOrder order)
-    {
-        var product = GetFirstProductInOrder(order);
-        Debug.LogError($"IAPManager: Purchase FAILED for {product?.definition.id}. Reason: {order.FailureReason}, Details: {order.Details}");
-    }
-    
-    // --- Helper & Cleanup Methods ---
-
-    Product GetFirstProductInOrder(Order order)
-    {
-        return order.CartOrdered.Items().First()?.Product;
-    }
-
-    void OnStoreDisconnected(StoreConnectionFailureDescription description)
-    {
-        Debug.LogWarning($"IAPManager: Store disconnected. Message: {description.message}");
     }
 
     void OnProductsFetchedFailed(ProductFetchFailed failure)
@@ -159,15 +160,12 @@ public class IAPManager : MonoBehaviour
 
     private void OnDestroy()
     {
-        // Unsubscribe from events
         if (m_StoreController != null)
         {
             m_StoreController.OnPurchasePending -= OnPurchasePending;
-            m_StoreController.OnPurchaseConfirmed -= OnPurchaseConfirmed;
-            m_StoreController.OnPurchaseFailed -= OnPurchaseFailed;
-            m_StoreController.OnStoreDisconnected -= OnStoreDisconnected;
-            m_StoreController.OnProductsFetchFailed -= OnProductsFetchedFailed;
             m_StoreController.OnProductsFetched -= OnProductsFetched;
+            m_StoreController.OnProductsFetchFailed -= OnProductsFetchedFailed;
+            m_StoreController.OnPurchaseDeferred -= OnPurchaseDeferred;
         }
     }
 }

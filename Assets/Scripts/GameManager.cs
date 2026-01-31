@@ -99,10 +99,14 @@ public class GameManager : MonoBehaviour
         UpdateScoreDisplay();
     }
     
-    public void RewardPlayerWithBalls_IAP()
+    public void RewardPlayerWithBalls_IAP(int quantity)
     {
         StopAllCoroutines();
-        GameData.BallsRemaining += ballsToAddForIAP;
+        int totalBallsToAdd = ballsToAddForIAP * quantity;
+        GameData.BallsRemaining += totalBallsToAdd;
+        
+        Debug.Log($"GameManager: Added {totalBallsToAdd} balls (Quantity: {quantity})");
+
         if (outOfBallsPanel != null) outOfBallsPanel.SetActive(false);
         UpdateScoreDisplay();
     }

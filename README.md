@@ -21,6 +21,8 @@ Welcome to **Ball Game**, a fast, satisfying, mobile-style **plinko/ball drop** 
 > - `![Main Menu](path/to/screenshot-main-menu.png)`
 > - `![Gameplay](path/to/screenshot-gameplay.png)`
 > - `![Payout Screen](path/to/screenshot-payout.png)`
+>
+> Tip: Keep images around **1280×720** for consistent layout.
 
 ---
 
@@ -47,6 +49,16 @@ Welcome to **Ball Game**, a fast, satisfying, mobile-style **plinko/ball drop** 
 
 ---
 
+## 🔁 Gameplay Loop
+
+1. **Start a run** from the main menu
+2. **Drop balls** into the board and watch them bounce
+3. **Collect stars/gems** from pickups and bonus boxes
+4. **Monitor gem progress** toward the payout threshold
+5. **Redeem** when you reach the goal
+
+---
+
 ## 🗺️ Scenes
 
 - **LoadingScene** → async load into the main menu
@@ -62,6 +74,21 @@ Welcome to **Ball Game**, a fast, satisfying, mobile-style **plinko/ball drop** 
 
 ---
 
+## 💰 Monetization & Rewards
+
+- **Rewarded Ads**: optional video ads grant extra balls
+- **IAP**: consumable ball pack (100 balls)
+- **Gems**: accumulated toward payouts on a timed cycle
+
+---
+
+## 🧠 Data & Persistence
+
+- **PlayerPrefs** stores balls remaining and score
+- **Gem payouts** track a timed cycle and reset on expiry
+
+---
+
 ## 🧰 Tech Stack
 
 - **Unity** 2022.3 (LTS)
@@ -70,12 +97,39 @@ Welcome to **Ball Game**, a fast, satisfying, mobile-style **plinko/ball drop** 
 
 ---
 
+## 🚀 Getting Started
+
+### Requirements
+
+- **Unity Hub**
+- **Unity 2022.3 LTS** (recommended)
+
+### Open the Project
+
+1. Open **Unity Hub** → **Add project from disk**
+2. Select the root folder of this repository
+3. Open with **Unity 2022.3 LTS**
+
+### Play in Editor
+
+1. Open the **LoadingScene** or **0_MainMenu** scene
+2. Press **Play** in the editor
+
+---
+
 ## 📁 Project Structure
 
 - `Assets/Scenes/` — Unity scenes (menu, gameplay, payment, loading)
 - `Assets/Scripts/` — core gameplay + UI logic
 - `Assets/Prefabs/` — reusable game objects
+- `ProjectSettings/` — Unity project configuration
 
 ---
 
-If you’d like a richer README (build steps, contribution guide, or playtest notes), just say the word!
+## 🤝 Contributing
+
+- Keep scripts small and focused
+- Prefer reusable prefabs over scene‑specific duplication
+- Document new features in this README
+
+---
